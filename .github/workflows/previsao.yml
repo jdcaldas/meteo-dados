@@ -1,0 +1,63 @@
+name: Previsão
+
+# Gera a chuva prevista (próximas 24 horas) para o centro de cada freguesia de Portugal Continental
+# e publica-a no GitHub Pages (https://jdcaldas.github.io/meteo-dados/previsao.json), de onde o
+# site meteo.mxm.pt a lê. Corre de hora em hora; um pedido falhado não estraga nada: o Pages
+# continua com o ficheiro anterior e a hora seguinte tenta outra vez.
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  gerar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Gerar previsao.json (Open-Meteo)
+        run: python ferramentas/previsao.py
+
+      - name: Validar
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("dados/previsao.json", encoding="utf-8"))
+          n, h = len(d["f"]), len(d["horas"])
+          assert n == 3049, f"freguesias: {n}"
+          assert h >= 24, f"horas: {h}"
+          vazios = sum(1 for v in d["f"].values() if len(v) != h or any(x is None for x in v))
+          assert vazios < 30, f"freguesias com valores em falta: {vazios}"
+          print("ok:", n, "freguesias,", h, "horas, gerado", d["gerado"])
+          PY
+
+      - name: Preparar a pasta a publicar
+        run: |
+          mkdir _site
+          cp dados/previsao.json _site/previsao.json
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

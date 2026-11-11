@@ -1,0 +1,4 @@
+dados/previsao.json
+__pycache__/
+*.pyc
+*.tmp
